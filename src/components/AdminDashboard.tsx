@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db, auth } from '../lib/firebase';
 import { 
   collection, 
@@ -33,12 +33,12 @@ import { HotspotPackage, HotspotSession, AppControl } from '../types';
 import { formatData, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
-import { getAdminConfigAI } from '../services/aiService';
+import { getAdminConfigAI, getSystemAnalysis } from '../services/aiService';
 import ChatBot from './ChatBot';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'packages' | 'codes' | 'monitoring' | 'messages' | 'settings' | 'requests'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'packages' | 'codes' | 'monitoring' | 'messages' | 'settings' | 'requests' | 'ai-command'>('overview');
   const [packages, setPackages] = useState<HotspotPackage[]>([]);
   const [sessions, setSessions] = useState<HotspotSession[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
@@ -152,6 +152,7 @@ export default function AdminDashboard() {
           <NavItem active={activeTab === 'packages'} onClick={() => setActiveTab('packages')} icon={<PackageIcon size={20}/>} label="NETWORK PLANS" />
           <NavItem active={activeTab === 'codes'} onClick={() => setActiveTab('codes')} icon={<Key size={20}/>} label="ACCESS CODES" />
           <NavItem active={activeTab === 'requests'} onClick={() => setActiveTab('requests')} icon={<ShieldCheck size={20}/>} label="REQUESTS" sub={requests.filter(r => r.status === 'pending').length > 0 ? requests.filter(r => r.status === 'pending').length.toString() : undefined} />
+          <NavItem active={activeTab === 'ai-command'} onClick={() => setActiveTab('ai-command')} icon={<Bot size={20}/>} label="AI COMMAND" sub="Beta" />
           <NavItem active={activeTab === 'messages'} onClick={() => setActiveTab('messages')} icon={<MessageSquare size={20}/>} label="COMMUNICATIONS" />
           <NavItem active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<Settings size={20}/>} label="SYSTEM CONFIG" />
         </nav>
@@ -585,6 +586,37 @@ export default function AdminDashboard() {
                 </motion.div>
             )}
 
+            {activeTab === 'ai-command' && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-[calc(100vh-200px)] flex flex-col">
+                    <div className="flex items-center gap-4 mb-8">
+                        <div className="bg-brand/20 p-3 rounded-2xl">
+                            <Bot className="text-brand" size={32} />
+                        </div>
+                        <div>
+                            <h2 className="text-3xl font-black italic tracking-tighter">AI Command Center</h2>
+                            <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Neural Link for System Management</p>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 dark-card bg-slate-900/10 flex flex-col overflow-hidden p-8 border-t-4 border-t-brand">
+                        <div className="flex-1 overflow-y-auto space-y-6 pb-6 scrollbar-technical pr-4">
+                            <div className="bg-slate-900/50 border border-border-dark p-6 rounded-[32px] max-w-[80%]">
+                                <p className="text-[10px] font-black uppercase text-brand mb-2 italic">SYSTEM_AI</p>
+                                <p className="text-sm font-medium leading-relaxed text-slate-300">
+                                    Link established. I have access to your active nodes, user requests, and system telemetry. 
+                                    How can I assist you with the network today? You can ask about traffic loads, identify bottleneck users, or summarize pending requests.
+                                </p>
+                            </div>
+
+                            {/* This is a simple implementation of the chat history within the component for now */}
+                            <SystemChatHelper 
+                                context={{ sessions, requests, settings, packages }} 
+                            />
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+
             {activeTab === 'messages' && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-[calc(100vh-200px)] flex gap-10">
                     <div className="w-80 dark-card flex flex-col shrink-0 overflow-hidden">
@@ -820,3 +852,89 @@ const User = ({ size, className }: any) => (
     <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
   </svg>
 );
+
+function SystemChatHelper({ context }: { context: any }) {
+    const [msgs, setMsgs] = useState<{role: 'user' | 'ai', text: string}[]>([]);
+    const [input, setInput] = useState('');
+    const [loading, setLoading] = useState(false);
+    const bottomRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [msgs]);
+
+    const handleSend = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!input.trim() || loading) return;
+
+        const userMsg = input.trim();
+        setInput('');
+        setMsgs(prev => [...prev, { role: 'user', text: userMsg }]);
+        setLoading(true);
+
+        const aiResult = await getSystemAnalysis(userMsg, context);
+        const aiText = typeof aiResult === 'string' ? aiResult : aiResult.text;
+        
+        setMsgs(prev => [...prev, { role: 'ai', text: aiText }]);
+        
+        // Handle automated updates if suggested by AI
+        if (typeof aiResult !== 'string' && aiResult.updates) {
+            const path = 'settings/global';
+            await updateDoc(doc(db, path), { 
+                ...context.settings, 
+                ...aiResult.updates, 
+                updatedAt: new Date().toISOString() 
+            }).catch(err => handleFirestoreError(err, OperationType.UPDATE, path));
+            
+            setMsgs(prev => [...prev, { 
+                role: 'ai', 
+                text: "⚙️ System configurations have been updated as requested." 
+            }]);
+        }
+        
+        setLoading(false);
+    };
+
+    return (
+        <>
+            {msgs.map((m, i) => (
+                <div key={i} className={m.role === 'user' ? "flex justify-end" : "flex justify-start"}>
+                    <div className={cn(
+                        "p-6 rounded-[32px] max-w-[80%] shadow-lg",
+                        m.role === 'user' ? "bg-brand text-white" : "bg-slate-900 border border-border-dark text-slate-300"
+                    )}>
+                        <p className="text-[10px] font-black uppercase mb-2 italic opacity-60">
+                            {m.role === 'user' ? 'ADMIN_COMMAND' : 'SYSTEM_AI'}
+                        </p>
+                        <p className="text-sm font-medium leading-relaxed">{m.text}</p>
+                    </div>
+                </div>
+            ))}
+            {loading && (
+                <div className="flex justify-start">
+                    <div className="bg-slate-900 border border-border-dark p-6 rounded-[32px] animate-pulse">
+                        <div className="flex gap-2">
+                            <div className="w-2 h-2 bg-brand rounded-full animate-bounce"></div>
+                            <div className="w-2 h-2 bg-brand rounded-full animate-bounce delay-75"></div>
+                            <div className="w-2 h-2 bg-brand rounded-full animate-bounce delay-150"></div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            <div ref={bottomRef} />
+
+            <form onSubmit={handleSend} className="sticky bottom-0 bg-surface-dark border-t border-border-dark pt-6 flex gap-4 mt-8">
+                <input 
+                    type="text"
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    placeholder="Masukkan arahan atau pertanyaan sistem..."
+                    className="flex-1 input-technical py-4 px-6 text-sm"
+                />
+                <button type="submit" disabled={loading} className="btn-primary w-16 flex items-center justify-center p-0">
+                    <Send size={20} />
+                </button>
+            </form>
+        </>
+    );
+}

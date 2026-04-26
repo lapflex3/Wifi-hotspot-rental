@@ -32,6 +32,7 @@ export default function CustomerDashboard({ user }: { user: any }) {
   const [session, setSession] = useState<HotspotSession | any>(null);
   const [settings, setSettings] = useState<AppControl | null>(null);
   const [timeLeft, setTimeLeft] = useState('');
+  const [isExpiringSoon, setIsExpiringSoon] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
 
   useEffect(() => {
@@ -102,6 +103,12 @@ export default function CustomerDashboard({ user }: { user: any }) {
       const now = new Date();
       const expiry = new Date(session.expiryTime);
       const diffSecs = differenceInSeconds(expiry, now);
+
+      if (diffSecs <= 900 && diffSecs > 0) {
+        setIsExpiringSoon(true);
+      } else {
+        setIsExpiringSoon(false);
+      }
 
       if (diffSecs <= 0) {
         const path = `sessions/${session.id}`;
@@ -181,6 +188,21 @@ export default function CustomerDashboard({ user }: { user: any }) {
               {/* Body */}
               <div className="px-6 -mt-8 flex-1 overflow-y-auto space-y-6 relative z-20 pb-10">
                 <AnimatePresence>
+                    {isExpiringSoon && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="bg-red-600/90 border border-red-500 p-4 rounded-2xl shadow-xl shadow-red-900/40 relative z-50"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-2 h-2 bg-white rounded-full animate-ping"></div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white italic">
+                            ALERT: LINK TERMINATION IN &lt;15M
+                          </p>
+                        </div>
+                      </motion.div>
+                    )}
                     {settings?.broadcastMessage && (
                         <motion.div 
                             initial={{ opacity: 0, x: -20 }}

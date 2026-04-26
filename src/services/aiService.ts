@@ -51,3 +51,52 @@ export async function getAdminConfigAI(instruction: string, currentSettings: any
     return null;
   }
 }
+
+export async function getSystemAnalysis(query: string, context: { sessions: any[], requests: any[], settings: any, packages: any[] }) {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: `
+          System Context:
+          - Active Sessions: ${JSON.stringify(context.sessions)}
+          - Pending Requests: ${JSON.stringify(context.requests.filter(r => r.status === 'pending'))}
+          - System Settings: ${JSON.stringify(context.settings)}
+          - Available Packages: ${JSON.stringify(context.packages)}
+          
+          Admin Query: ${query}
+          
+          If the admin asks to change settings (allow apps, block apps, change SSID, broadcast msg, etc.), 
+          include an 'updates' object in your JSON response.
+          
+          Response format: 
+          {
+            "text": "Your natural language response here",
+            "updates": {
+              "allowedApps": ["app1", "app2"], // include the full updated list if changed
+              "broadcastMessage": "...",
+              "popupSSID": "...",
+              "popupGatewayIP": "..."
+            }
+          }
+          ` }]
+        }
+      ],
+      config: {
+        systemInstruction: "You are the Senior Network Architect. You MUST return a valid JSON object with 'text' and optionally 'updates'. Be technical and helpful.",
+        responseMimeType: "application/json"
+      }
+    });
+
+    try {
+      return JSON.parse(response.text);
+    } catch (e) {
+      return { text: response.text };
+    }
+  } catch (error) {
+    console.error("AI Analysis Error:", error);
+    return { text: "Maaf, sistem AI sedang mengalami gangguan." };
+  }
+}
