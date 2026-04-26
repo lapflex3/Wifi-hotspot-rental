@@ -29,10 +29,36 @@
         "dataUsedMB": { "type": "number" },
         "speedLimitMbps": { "type": "number" },
         "userId": { "type": "string" },
+        "deviceInfo": {
+          "type": "object",
+          "properties": {
+            "os": { "type": "string" },
+            "browser": { "type": "string" },
+            "cpu": { "type": "string" },
+            "ram": { "type": "string" },
+            "isMobile": { "type": "boolean" },
+            "gpu": { "type": "string" },
+            "platform": { "type": "string" },
+            "cpuUsage": { "type": "number" }
+          }
+        },
         "lastAlertData": { "type": "boolean" },
         "lastAlertTime": { "type": "boolean" }
       },
       "required": ["code", "secretKey", "status", "startTime", "expiryTime", "dataLimitMB", "dataUsedMB", "speedLimitMbps"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "Message between user and admin",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "sender": { "type": "string", "enum": ["user", "admin", "ai"] },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "isRead": { "type": "boolean" }
+      },
+      "required": ["sessionId", "sender", "text", "timestamp"]
     },
     "AppControl": {
       "title": "App Control",
@@ -55,9 +81,37 @@
         "dataTransferredMB": { "type": "number" }
       },
       "required": ["sessionId", "timestamp", "dataTransferredMB"]
+    },
+    "Admin": {
+      "title": "Administrator",
+      "description": "User with admin privileges",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role", "createdAt"]
+    },
+    "Request": {
+      "title": "User Request",
+      "description": "A request from a user for extension or support",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "code": { "type": "string" },
+        "type": { "type": "string", "enum": ["extension", "support"] },
+        "status": { "type": "string", "enum": ["pending", "approved", "denied"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sessionId", "code", "type", "status", "timestamp"]
     }
   },
   "firestore": {
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "Registered administrators"
+    },
     "/packages/{packageId}": {
       "schema": "Package",
       "description": "Available rental packages"
@@ -73,6 +127,14 @@
     "/logs/{logId}": {
       "schema": "UsageLog",
       "description": "Detailed usage logs"
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Chat support messages"
+    },
+    "/requests/{requestId}": {
+      "schema": "Request",
+      "description": "User requests for extensions or support"
     }
   }
 }

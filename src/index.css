@@ -1,16 +1,70 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   
-  --color-primary: var(--color-blue-600);
-  --color-secondary: var(--color-slate-900);
+  --color-brand: #3b82f6;
+  --color-brand-muted: #1e3a8a;
+  --color-bg-dark: #020617;
+  --color-surface-dark: #0f172a;
+  --color-border-dark: #1e293b;
+  --color-text-dark: #f8fafc;
+  --color-text-muted-dark: #94a3b8;
+
+  --animate-spin-slow: spin 3s linear infinite;
+  --animate-spin-reverse: spin-reverse 1s linear infinite;
+
+  @keyframes spin-reverse {
+    from { transform: rotate(360deg); }
+    to { transform: rotate(0deg); }
+  }
 }
 
 @layer base {
   body {
-    @apply text-slate-800 antialiased bg-slate-50;
+    @apply bg-bg-dark text-text-dark font-sans selection:bg-brand selection:text-white antialiased;
   }
+
+  /* Custom scrollbar for technical look */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-bg-dark;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border-dark rounded-full hover:bg-slate-700 transition-colors;
+  }
+}
+
+.dark-card {
+  @apply bg-surface-dark border border-border-dark rounded-2xl shadow-xl shadow-black/20 transition-all;
+}
+
+.technical-grid {
+  background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+.glass-panel {
+  @apply bg-slate-900/40 backdrop-blur-md border border-white/5;
+}
+
+.text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400;
+}
+
+.btn-primary {
+  @apply bg-brand hover:bg-blue-600 px-6 py-3 rounded-xl font-bold transition-all active:scale-95 disabled:opacity-50 text-white shadow-lg shadow-blue-500/20;
+}
+
+.btn-outline {
+  @apply border border-border-dark hover:bg-border-dark bg-transparent px-6 py-3 rounded-xl font-bold transition-all active:scale-95 text-text-dark;
+}
+
+.input-technical {
+  @apply flex-1 bg-bg-dark border-2 border-border-dark rounded-xl px-4 py-3 text-text-dark focus:outline-none focus:ring-4 focus:ring-brand/20 focus:border-brand transition-all font-mono;
 }

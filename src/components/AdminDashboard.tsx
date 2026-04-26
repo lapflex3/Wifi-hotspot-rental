@@ -1,462 +1,726 @@
-import { useState, useEffect } from 'react';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { db, auth } from '../lib/firebase';
 import { 
   collection, 
   onSnapshot, 
   addDoc, 
-  updateDoc, 
   deleteDoc, 
   doc, 
-  query, 
-  orderBy, 
-  serverTimestamp,
-  getDocs,
-  setDoc
+  updateDoc 
 } from 'firebase/firestore';
 import { 
   LayoutDashboard, 
-  Package as PackageIcon, 
+  PackageIcon, 
   Key, 
-  Activity, 
   Settings, 
-  Plus, 
+  LogOut, 
   Trash2, 
-  RefreshCw, 
-  LogOut,
+  Wifi, 
+  Activity, 
+  RefreshCw,
   Send,
   AppWindow,
-  Search,
-  Bell,
-  Wifi,
+  Cpu,
+  Database,
+  Smartphone,
+  Bot,
+  MessageSquare,
+  ChevronRight,
+  Terminal,
   ShieldCheck
 } from 'lucide-react';
-import { HotspotPackage, HotspotSession, AppControl, UsageLog } from '../types';
-import { generateKey, formatData, cn } from '../lib/utils';
+import { HotspotPackage, HotspotSession, AppControl } from '../types';
+import { formatData, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
+import { getAdminConfigAI } from '../services/aiService';
+import ChatBot from './ChatBot';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'packages' | 'codes' | 'logs' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'packages' | 'codes' | 'monitoring' | 'messages' | 'settings' | 'requests'>('overview');
   const [packages, setPackages] = useState<HotspotPackage[]>([]);
   const [sessions, setSessions] = useState<HotspotSession[]>([]);
-  const [logs, setLogs] = useState<UsageLog[]>([]);
+  const [requests, setRequests] = useState<any[]>([]);
   const [settings, setSettings] = useState<AppControl | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  
+  const [newPackage, setNewPackage] = useState({
+    name: '',
+    dataLimitMB: 1024,
+    speedLimitMbps: 5,
+    durationHours: 24,
+    price: 10
+  });
 
-  // Form states
-  const [newPackage, setNewPackage] = useState({ name: '', dataLimitMB: 1000, speedLimitMbps: 5, durationHours: 1, price: 5 });
   const [selectedPackageId, setSelectedPackageId] = useState('');
   const [broadcastMsg, setBroadcastMsg] = useState('');
+  const [aiInstruction, setAiInstruction] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
     const unsubPackages = onSnapshot(collection(db, 'packages'), (snap) => {
       setPackages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HotspotPackage)));
-    });
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'packages'));
 
-    const unsubSessions = onSnapshot(query(collection(db, 'sessions'), orderBy('startTime', 'desc')), (snap) => {
-      setSessions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HotspotSession)));
-    });
+    const unsubSessions = onSnapshot(collection(db, 'sessions'), (snap) => {
+      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      setSessions(data);
+      if (data.length > 0 && !selectedSessionId) setSelectedSessionId(data[0].id);
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'sessions'));
 
-    const unsubSettings = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
-      if (doc.exists()) setSettings(doc.data() as AppControl);
-    });
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'global'), (docSnap) => {
+      if (docSnap.exists()) setSettings(docSnap.data() as AppControl);
+    }, (err) => handleFirestoreError(err, OperationType.GET, 'settings/global'));
 
-    setLoading(false);
+    const unsubRequests = onSnapshot(collection(db, 'requests'), (snap) => {
+      setRequests(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'requests'));
+
     return () => {
       unsubPackages();
       unsubSessions();
       unsubSettings();
+      unsubRequests();
     };
   }, []);
 
   const handleAddPackage = async (e: React.FormEvent) => {
     e.preventDefault();
-    await addDoc(collection(db, 'packages'), newPackage);
-    setNewPackage({ name: '', dataLimitMB: 1000, speedLimitMbps: 5, durationHours: 1, price: 5 });
+    await addDoc(collection(db, 'packages'), newPackage).catch(err => handleFirestoreError(err, OperationType.CREATE, 'packages'));
+    setNewPackage({ name: '', dataLimitMB: 1024, speedLimitMbps: 5, durationHours: 24, price: 10 });
   };
 
   const handleGenerateCode = async () => {
-    if (!selectedPackageId) return;
     const pkg = packages.find(p => p.id === selectedPackageId);
     if (!pkg) return;
 
-    const code = generateKey(12);
-    const secretKey = generateKey(12);
-    const now = new Date();
-    const expiry = new Date(now.getTime() + pkg.durationHours * 60 * 60 * 1000);
-
+    const code = `HS-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    const secretKey = Math.random().toString(36).substring(2, 10).toUpperCase();
+    
     await addDoc(collection(db, 'sessions'), {
       code,
       secretKey,
       packageId: pkg.id,
       packageName: pkg.name,
-      status: 'active',
-      startTime: now.toISOString(),
-      expiryTime: expiry.toISOString(),
       dataLimitMB: pkg.dataLimitMB,
       dataUsedMB: 0,
       speedLimitMbps: pkg.speedLimitMbps,
-      lastAlertData: false,
-      lastAlertTime: false
-    });
+      startTime: new Date().toISOString(),
+      expiryTime: new Date(Date.now() + pkg.durationHours * 3600000).toISOString(),
+      status: 'active'
+    }).catch(err => handleFirestoreError(err, OperationType.CREATE, 'sessions'));
+    setSelectedPackageId('');
   };
 
-  const handleUpdateSettings = async () => {
-    await setDoc(doc(db, 'settings', 'global'), {
-      broadcastMessage: broadcastMsg,
-      allowedApps: settings?.allowedApps || ['WhatsApp', 'Facebook', 'Browser'],
-      updatedAt: new Date().toISOString()
-    });
-    setBroadcastMsg('');
-    alert('Notifikasi dihantar!');
+  const handleAIConfig = async () => {
+    if (!aiInstruction.trim()) return;
+    setAiLoading(true);
+    const updates = await getAdminConfigAI(aiInstruction, settings);
+    if (updates) {
+      const path = 'settings/global';
+      await updateDoc(doc(db, path), { 
+        ...settings, 
+        ...updates, 
+        updatedAt: new Date().toISOString() 
+      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, path));
+      setAiInstruction('');
+    }
+    setAiLoading(false);
   };
 
-  const resetSession = async (id: string) => {
-    await updateDoc(doc(db, 'sessions', id), { dataUsedMB: 0, status: 'active' });
-  };
+  const activeSessionsCount = sessions.filter(s => s.status === 'active').length;
+  const totalDataUsed = sessions.reduce((acc, s) => acc + s.dataUsedMB, 0);
 
   return (
-    <div className="flex min-h-screen bg-slate-50 font-sans">
-      {/* Sidebar Navigation */}
-      <div className="hidden md:flex flex-col w-64 bg-slate-900 text-white border-r border-slate-700 shadow-xl overflow-hidden shrink-0">
-        <div className="p-6 border-b border-slate-700 flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-[10px] font-black shadow-lg">WIFI</div>
-          <h1 className="text-xl font-bold tracking-tight">HS-Manager</h1>
+    <div className="flex h-screen bg-bg-dark text-text-dark technical-grid overflow-hidden">
+      {/* Sidebar */}
+      <aside className="w-72 bg-surface-dark border-r border-border-dark flex flex-col p-6 shrink-0 relative z-20">
+        <div className="flex items-center gap-4 mb-12">
+          <div className="bg-brand p-2.5 rounded-xl shadow-lg shadow-brand/20">
+            <Wifi className="text-white" size={24} />
+          </div>
+          <div>
+            <h1 className="text-lg font-black tracking-tighter">HS-MANAGER</h1>
+            <p className="text-[10px] font-black text-slate-500 tracking-[0.2em] uppercase italic">Admin Portal</p>
+          </div>
         </div>
-        
-        <nav className="flex-1 p-4 space-y-2">
-          <NavItem active={activeTab === 'overview'} icon={<LayoutDashboard size={20} />} label="Utama (Dashboard)" onClick={() => setActiveTab('overview')} />
-          <NavItem active={activeTab === 'packages'} icon={<PackageIcon size={20} />} label="Pengurusan Kunci" onClick={() => setActiveTab('packages')} />
-          <NavItem active={activeTab === 'codes'} icon={<Key size={20} />} label="Log & Analitik" onClick={() => setActiveTab('codes')} />
-          <NavItem active={activeTab === 'logs'} icon={<Activity size={20} />} label="Tetapan Admin" onClick={() => setActiveTab('logs')} />
-          <NavItem active={activeTab === 'settings'} icon={<Settings size={20} />} label="Konfigurasi Lanjut" onClick={() => setActiveTab('settings')} />
+
+        <nav className="flex-1 space-y-2">
+          <NavItem active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} icon={<LayoutDashboard size={20}/>} label="COMMAND CENTER" />
+          <NavItem active={activeTab === 'monitoring'} onClick={() => setActiveTab('monitoring')} icon={<Activity size={20}/>} label="DEVICE MONITOR" sub="Live" />
+          <NavItem active={activeTab === 'packages'} onClick={() => setActiveTab('packages')} icon={<PackageIcon size={20}/>} label="NETWORK PLANS" />
+          <NavItem active={activeTab === 'codes'} onClick={() => setActiveTab('codes')} icon={<Key size={20}/>} label="ACCESS CODES" />
+          <NavItem active={activeTab === 'requests'} onClick={() => setActiveTab('requests')} icon={<ShieldCheck size={20}/>} label="REQUESTS" sub={requests.filter(r => r.status === 'pending').length > 0 ? requests.filter(r => r.status === 'pending').length.toString() : undefined} />
+          <NavItem active={activeTab === 'messages'} onClick={() => setActiveTab('messages')} icon={<MessageSquare size={20}/>} label="COMMUNICATIONS" />
+          <NavItem active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<Settings size={20}/>} label="SYSTEM CONFIG" />
         </nav>
 
-        <div className="p-6 border-t border-slate-700 flex items-center gap-3 bg-slate-950/20 backdrop-blur-sm">
-          <div className="w-10 h-10 rounded-full bg-slate-600 border border-slate-500 flex items-center justify-center overflow-hidden">
-            {auth.currentUser?.photoURL ? <img src={auth.currentUser.photoURL} alt="Admin" /> : <ShieldCheck className="text-blue-400" />}
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <p className="text-sm font-semibold truncate leading-tight">Super Admin</p>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">System Active</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 shadow-sm relative z-10">
-          <div className="flex items-center gap-4 text-sm font-medium text-slate-500">
-            <span className="flex items-center gap-2">Lokasi: <span className="font-bold text-slate-800">Zon A (Cafeteria)</span></span>
-            <span className="text-green-500 flex items-center gap-1.5 font-bold text-[10px] uppercase border border-green-100 bg-green-50 px-2 py-0.5 rounded-full">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div> Network Stable
-            </span>
-          </div>
-          <button 
-            onClick={() => auth.signOut()}
-            className="flex items-center gap-2 text-slate-400 hover:text-red-500 transition-colors bg-slate-50 hover:bg-red-50 p-2 rounded-lg"
-          >
-            <LogOut size={18} />
+        <div className="pt-6 border-t border-border-dark mt-auto">
+          <button onClick={() => auth.signOut()} className="flex items-center gap-3 w-full p-4 rounded-xl text-slate-500 hover:text-red-400 hover:bg-red-950/10 transition-all font-bold text-xs uppercase tracking-widest">
+            <LogOut size={20} />
+            TERMINATE SESSION
           </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col h-full bg-bg-dark/50 overflow-hidden relative">
+        {/* Top Header */}
+        <header className="h-20 border-b border-border-dark flex items-center justify-between px-10 bg-surface-dark/30 backdrop-blur-md shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+            <p className="text-[10px] font-black tracking-widest text-slate-500 uppercase">System Status: Optimal</p>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="text-right">
+                <p className="text-[10px] font-bold text-slate-500 uppercase">Runtime Status</p>
+                <p className="text-xs font-mono font-black text-brand tracking-widest">OK-200_STABLE</p>
+            </div>
+            <div className="w-10 h-10 bg-slate-800 rounded-full border border-slate-700 flex items-center justify-center">
+                <Bot size={20} className="text-slate-400" />
+            </div>
+          </div>
         </header>
 
-        <div className="p-8">
+        <div className="flex-1 overflow-y-auto p-10">
           <AnimatePresence mode="wait">
             {activeTab === 'overview' && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} key="overview" className="space-y-8 h-full overflow-y-auto pb-20">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <StatCard label="Sesi Aktif" value={sessions.filter(s => s.status === 'active').length.toString()} trend="+12% vs semalam" color="text-slate-900" />
-                  <StatCard label="Jumlah Pakej" value={packages.length.toString()} trend="Status: Stabil" color="text-slate-900" />
-                  <StatCard label="Data Terpakai" value={formatData(sessions.reduce((acc, s) => acc + s.dataUsedMB, 0))} trend="+2.4GB jam ini" color="text-blue-600" />
-                  <StatCard label="Kod Tamat" value={sessions.filter(s => s.status === 'expired').length.toString()} trend="Perlu dibersihkan" color="text-slate-400" />
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} key="overview" className="space-y-10 pb-20">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                  <StatCard label="Live Nodes" value={activeSessionsCount.toString()} trend="+2" />
+                  <StatCard label="Throughput" value={formatData(totalDataUsed)} trend="Accumulated" />
+                  <StatCard label="Plan Inventory" value={packages.length.toString()} trend="Configured" />
+                  <StatCard label="Security Logs" value="Stable" trend="No Threats" color="text-green-400" />
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest">Sesi Aktif Terkini</h3>
-                    <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live Updates</span>
+                <div className="dark-card overflow-hidden">
+                    <div className="p-8 border-b border-border-dark flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <Terminal size={20} className="text-brand" />
+                            <h3 className="text-xs font-black uppercase tracking-[0.3em]">Traffic Control Monitor</h3>
+                        </div>
+                        <RefreshCw size={14} className="text-slate-700 animate-spin-slow" />
                     </div>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead className="text-[10px] uppercase text-slate-400 font-bold tracking-widest bg-slate-50">
-                        <tr>
-                          <th className="px-6 py-4">ID Pelanggan / Kod</th>
-                          <th className="px-6 py-4">Pakej</th>
-                          <th className="px-6 py-4">Status & Kesihatan</th>
-                          <th className="px-6 py-4 text-right">Baki Kapasiti</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {sessions.slice(0, 8).map(session => (
-                          <tr key={session.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-6 py-4">
-                                <div className="font-mono text-sm font-bold text-blue-600">{session.code}</div>
-                                <div className="text-[10px] text-slate-400 font-medium">HS-ID: {session.id.slice(0,8)}</div>
-                            </td>
-                            <td className="px-6 py-4">
-                                <div className="text-sm font-semibold text-slate-700">{session.packageName}</div>
-                                <div className="text-[10px] text-slate-400">{session.speedLimitMbps} Mbps Cap</div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <span className={cn(
-                                    "w-2 h-2 rounded-full",
-                                    session.status === 'active' ? "bg-green-500" : "bg-slate-300"
-                                )}></span>
-                                <span className={cn(
-                                    "text-[10px] font-bold uppercase tracking-widest",
-                                    session.status === 'active' ? "text-green-600" : "text-slate-400"
-                                )}>
-                                    {session.status}
-                                </span>
-                              </div>
-                              <div className="text-[10px] text-slate-400 mt-1">Tamat: {format(new Date(session.expiryTime), 'HH:mm dd/MM')}</div>
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                                <div className="text-sm font-mono font-bold text-slate-800">{formatData(session.dataLimitMB - session.dataUsedMB)}</div>
-                                <div className="w-24 h-1 bg-slate-100 rounded-full mt-2 ml-auto overflow-hidden">
-                                    <div 
-                                        className="h-full bg-blue-500" 
-                                        style={{ width: `${Math.max(0, 100 - (session.dataUsedMB / session.dataLimitMB * 100))}%` }}
-                                    ></div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="bg-slate-900/50 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
+                                <tr>
+                                    <th className="px-8 py-6">Identity / Code</th>
+                                    <th className="px-8 py-6">Network Node</th>
+                                    <th className="px-8 py-6 text-right">Data Sink</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border-dark">
+                                {sessions.slice(0, 5).map(s => (
+                                    <tr key={s.id} className="hover:bg-slate-900/40 transition-colors group">
+                                        <td className="px-8 py-6">
+                                            <div className="font-mono text-sm font-bold text-brand group-hover:translate-x-1 transition-transform">{s.code}</div>
+                                            <div className="text-[10px] text-slate-600 mt-1 uppercase font-bold tracking-widest">{s.id.slice(0,12)}</div>
+                                        </td>
+                                        <td className="px-8 py-6">
+                                            <div className="text-xs font-bold text-text-dark">{s.packageName}</div>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <span className={cn(
+                                                    "w-1.5 h-1.5 rounded-full",
+                                                    s.status === 'active' ? "bg-green-500" : "bg-red-500"
+                                                )}></span>
+                                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">{s.status}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-8 py-6 text-right">
+                                            <div className="text-sm font-mono font-black text-slate-300">{formatData(s.dataUsedMB)}</div>
+                                            <div className="w-24 h-1 bg-slate-900 rounded-full ml-auto mt-2 overflow-hidden border border-slate-800">
+                                                <div className="h-full bg-brand" style={{ width: `${(s.dataUsedMB/s.dataLimitMB)*100}%` }}></div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'monitoring' && (
+              <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} key="monitoring" className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                <div className="lg:col-span-1 space-y-6 overflow-y-auto max-h-[calc(100vh-200px)] pr-2">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-2 mb-4">Active Endpoints</p>
+                    {sessions.map(s => (
+                        <button 
+                            key={s.id} 
+                            onClick={() => setSelectedSessionId(s.id)}
+                            className={cn(
+                                "w-full text-left dark-card p-6 border-l-4 transition-all active:scale-[0.98] group",
+                                selectedSessionId === s.id ? "border-brand bg-slate-900" : "border-transparent opacity-60 grayscale hover:opacity-100 hover:grayscale-0"
+                            )}
+                        >
+                            <div className="flex justify-between items-start">
+                                <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center text-slate-500 group-hover:text-brand transition-colors mb-4">
+                                    <Smartphone size={20} />
                                 </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                                {s.status === 'active' && <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mt-2"></div>}
+                            </div>
+                            <h4 className="text-sm font-mono font-black text-text-dark">{s.code}</h4>
+                            <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest mt-1 italic">{s.packageName}</p>
+                        </button>
+                    ))}
+                </div>
+
+                <div className="lg:col-span-2">
+                    {selectedSessionId ? (
+                        <div className="space-y-8">
+                            {sessions.find(s => s.id === selectedSessionId) && (
+                                <div className="space-y-8">
+                                    <div className="bg-gradient-to-br from-surface-dark to-bg-dark rounded-[40px] p-10 border border-border-dark shadow-2xl relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 p-10 opacity-[0.03]">
+                                            <Cpu size={200} />
+                                        </div>
+                                        <div className="flex justify-between items-start relative z-10">
+                                            <div>
+                                                <h2 className="text-3xl font-black tracking-tighter mb-2 italic">Endpoint Intelligence</h2>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="bg-slate-900 px-3 py-1 rounded-lg border border-slate-800 font-mono text-[10px] text-brand uppercase font-bold tracking-widest">ID: {selectedSessionId.slice(0,16)}</span>
+                                                    <span className="text-[10px] font-bold text-slate-600 uppercase">Real-time Telemetry Enabled</span>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Last Update</p>
+                                                <p className="text-xs font-mono font-bold text-slate-400">1.2ms Offset</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12 relative z-10">
+                                            <div className="dark-card p-8 bg-slate-900/50">
+                                                <div className="flex items-center gap-4 mb-6">
+                                                    <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-brand">
+                                                        <Cpu size={24} />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Processor Unit</p>
+                                                        <h4 className="text-sm font-bold text-text-dark">ARM-64 Optimized Core</h4>
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-4">
+                                                    <div className="flex justify-between items-end">
+                                                        <p className="text-[11px] font-bold text-slate-400">CPU Usage Intensity</p>
+                                                        <p className="text-xl font-black text-brand italic">{(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.cpuUsage || '0'}%</p>
+                                                    </div>
+                                                    <div className="h-2 bg-bg-dark rounded-full overflow-hidden p-0.5 border border-border-dark">
+                                                        <motion.div 
+                                                            initial={{ width: 0 }}
+                                                            animate={{ width: `${(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.cpuUsage || 0}%` }}
+                                                            className="h-full bg-brand rounded-full"
+                                                        ></motion.div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="dark-card p-8 bg-slate-900/50">
+                                                <div className="flex items-center gap-4 mb-6">
+                                                    <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-orange-400">
+                                                        <Database size={24} />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Memory Matrix</p>
+                                                        <h4 className="text-sm font-bold text-text-dark">Volatile RAM Cache</h4>
+                                                    </div>
+                                                </div>
+                                                <div className="flex justify-between items-center bg-bg-dark rounded-2xl p-5 border border-border-dark">
+                                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Capacity</p>
+                                                    <p className="text-xl font-black text-orange-400 italic">{(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.ram || 'U/N'}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
+                                            <MonitoringSmallCard label="Platform OS" value={(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.os?.split(' ')[0] || 'Unknown'} />
+                                            <MonitoringSmallCard label="Client Browser" value={(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.browser?.split('/')[0] || 'Generic'} />
+                                            <MonitoringSmallCard label="Topology" value={(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.isMobile ? 'Mobile Node' : 'Workstation'} />
+                                        </div>
+                                    </div>
+
+                                    <div className="dark-card p-10 bg-surface-dark border-t-4 border-t-brand">
+                                        <div className="flex items-center gap-4 mb-8">
+                                            <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-slate-400">
+                                                <Terminal size={24} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-xl font-black tracking-tighter italic">Raw Metadata Stream</h3>
+                                                <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Full Header Analysis</p>
+                                            </div>
+                                        </div>
+                                        <pre className="bg-bg-dark border border-border-dark p-6 rounded-2xl text-[10px] font-mono text-slate-400 overflow-x-auto whitespace-pre-wrap leading-relaxed shadow-inner">
+                                            {JSON.stringify((sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo, null, 2)}
+                                        </pre>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="h-full flex items-center justify-center dark-card italic text-slate-700 bg-slate-900/20">
+                            Select an endpoint for management...
+                        </div>
+                    )}
                 </div>
               </motion.div>
             )}
 
             {activeTab === 'packages' && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} key="packages" className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-1 space-y-6">
-                  <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-full -mr-12 -mt-12"></div>
-                    <h3 className="text-xl font-bold mb-6 text-slate-800 relative z-10">Konfigurasi <br/><span className="text-blue-600 underline">Kunci Baharu</span></h3>
-                    <form onSubmit={handleAddPackage} className="space-y-6 relative z-10">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1">Nama Pakej (Label)</label>
-                        <input 
-                          type="text" 
-                          required 
-                          className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl bg-slate-50 text-slate-800 font-bold focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-                          value={newPackage.name}
-                          onChange={e => setNewPackage({...newPackage, name: e.target.value})}
-                          placeholder="Standard 5GB"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Data (MB)</label>
-                          <input 
-                            type="number" 
-                            required 
-                            className="w-full px-4 py-3 border-2 border-slate-100 rounded-xl bg-slate-50 text-sm font-bold"
-                            value={newPackage.dataLimitMB}
-                            onChange={e => setNewPackage({...newPackage, dataLimitMB: Number(e.target.value)})}
-                          />
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                    <div className="lg:col-span-1">
+                        <div className="dark-card p-10 bg-slate-900/30">
+                            <h3 className="text-2xl font-black italic mb-8 tracking-tighter">Forge New <br/><span className="text-brand underline">Network Layer</span></h3>
+                            <form onSubmit={handleAddPackage} className="space-y-6">
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 pl-1">Plan Identifier</label>
+                                    <input 
+                                        type="text" 
+                                        required 
+                                        value={newPackage.name}
+                                        onChange={e => setNewPackage({...newPackage, name: e.target.value})}
+                                        className="input-technical w-full"
+                                        placeholder="EX-NODE-5G"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 italic">Data (MB)</label>
+                                        <input type="number" value={newPackage.dataLimitMB} onChange={e => setNewPackage({...newPackage, dataLimitMB: Number(e.target.value)})} className="input-technical w-full text-center" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 italic">Speed (Mbps)</label>
+                                        <input type="number" value={newPackage.speedLimitMbps} onChange={e => setNewPackage({...newPackage, speedLimitMbps: Number(e.target.value)})} className="input-technical w-full text-center" />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 italic">Uptime (Hrs)</label>
+                                        <input type="number" value={newPackage.durationHours} onChange={e => setNewPackage({...newPackage, durationHours: Number(e.target.value)})} className="input-technical w-full text-center" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 italic">Tariff (RM)</label>
+                                        <input type="number" value={newPackage.price} onChange={e => setNewPackage({...newPackage, price: Number(e.target.value)})} className="input-technical w-full text-center" />
+                                    </div>
+                                </div>
+                                <button type="submit" className="btn-primary w-full text-[10px] uppercase tracking-widest mt-4">
+                                    Commit Plan to Matrix
+                                </button>
+                            </form>
                         </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Speed (Mbps)</label>
-                          <input 
-                            type="number" 
-                            required 
-                            className="w-full px-4 py-3 border-2 border-slate-100 rounded-xl bg-slate-50 text-sm font-bold"
-                            value={newPackage.speedLimitMbps}
-                            onChange={e => setNewPackage({...newPackage, speedLimitMbps: Number(e.target.value)})}
-                          />
-                        </div>
-                      </div>
-                      <button type="submit" className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl hover:bg-black active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 tracking-widest text-xs">
-                        SIMPAN PAKEJ
-                      </button>
-                    </form>
-                  </div>
-                </div>
-
-                <div className="lg:col-span-2 space-y-4 overflow-y-auto max-h-[calc(100vh-200px)] lg:pr-2">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1 italic">Senarai Pakej Berdaftar</p>
-                  {packages.map(pkg => (
-                    <div key={pkg.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:border-blue-500 transition-all group">
-                      <div className="flex items-center gap-5">
-                        <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center group-hover:bg-blue-50 transition-colors">
-                            <PackageIcon className="text-slate-400 group-hover:text-blue-500" />
-                        </div>
-                        <div>
-                            <h4 className="font-bold text-slate-800 text-lg leading-tight">{pkg.name}</h4>
-                            <div className="flex gap-3 mt-1">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded italic">{formatData(pkg.dataLimitMB)}</span>
-                                <span className="text-[10px] font-bold text-blue-500 uppercase bg-blue-50 px-2 py-0.5 rounded italic">{pkg.speedLimitMbps} Mbps</span>
-                            </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-6">
-                        <div className="text-right">
-                          <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Pricing</p>
-                          <p className="text-xl font-black text-slate-900 tracking-tighter">RM {pkg.price.toFixed(2)}</p>
-                        </div>
-                        <button onClick={async () => await deleteDoc(doc(db, 'packages', pkg.id))} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all">
-                          <Trash2 size={20} />
-                        </button>
-                      </div>
                     </div>
-                  ))}
-                </div>
-              </motion.div>
+                    <div className="lg:col-span-2 space-y-6 overflow-y-auto max-h-[calc(100vh-200px)]">
+                        {packages.map(pkg => (
+                            <div key={pkg.id} className="dark-card p-10 flex items-center justify-between group hover:border-brand transition-all">
+                                <div className="flex items-center gap-8">
+                                    <div className="w-16 h-16 bg-bg-dark rounded-2xl flex items-center justify-center text-slate-700 group-hover:text-brand transition-colors border border-border-dark">
+                                        <PackageIcon size={32} />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-2xl font-black italic tracking-tighter text-text-dark">{pkg.name}</h4>
+                                        <div className="flex gap-4 mt-2">
+                                            <span className="text-[10px] font-black bg-bg-dark border border-border-dark px-3 py-1 rounded-lg text-slate-500 italic uppercase">{formatData(pkg.dataLimitMB)}</span>
+                                            <span className="text-[10px] font-black bg-brand/10 border border-brand/20 px-3 py-1 rounded-lg text-brand italic uppercase">{pkg.speedLimitMbps} MBPS</span>
+                                            <span className="text-[10px] font-black bg-bg-dark border border-border-dark px-3 py-1 rounded-lg text-slate-500 italic uppercase">{pkg.durationHours} HRS</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-10">
+                                    <div className="text-right">
+                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-2">Market Tariff</p>
+                                        <p className="text-3xl font-black text-text-dark italic tracking-tighter">RM{pkg.price.toFixed(2)}</p>
+                                    </div>
+                                    <button onClick={async () => await deleteDoc(doc(db, 'packages', pkg.id))} className="p-4 text-slate-700 hover:text-red-500 hover:bg-red-950/20 rounded-2xl transition-all border border-transparent hover:border-red-900">
+                                        <Trash2 size={24} />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </motion.div>
             )}
 
             {activeTab === 'codes' && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} key="codes" className="space-y-8">
-                <div className="bg-slate-900 p-10 rounded-[40px] shadow-2xl relative overflow-hidden text-white">
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/20 rounded-full blur-3xl -mr-32 -mt-32"></div>
-                  <h3 className="text-3xl font-black mb-8 tracking-tighter">Penjanaan <br/><span className="text-blue-400 italic underline decoration-blue-500/30">Baucar Hotspot</span></h3>
-                  <div className="flex flex-col sm:flex-row gap-6 items-end relative z-10">
-                    <div className="flex-1 space-y-3 w-full">
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] pl-1">Pilih Pelan Langganan</label>
-                      <select 
-                        className="w-full px-6 py-5 border-2 border-slate-700 rounded-3xl bg-slate-800 text-white font-bold focus:ring-4 focus:ring-blue-500/20 outline-none transition-all cursor-pointer appearance-none shadow-inner"
-                        value={selectedPackageId}
-                        onChange={e => setSelectedPackageId(e.target.value)}
-                      >
-                        <option value="">-- Senarai Pakej --</option>
-                        {packages.map(pkg => (
-                          <option key={pkg.id} value={pkg.id}>{pkg.name} | RM {pkg.price}</option>
-                        ))}
-                      </select>
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="space-y-10">
+                    <div className="bg-slate-900 border border-border-dark p-12 rounded-[40px] shadow-2xl relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-96 h-96 bg-brand/10 rounded-full blur-[100px] -mr-48 -mt-48"></div>
+                        <h3 className="text-4xl font-black tracking-tighter italic mb-10 relative z-10 text-text-dark">Generate <br/><span className="text-brand">Secure Access Code</span></h3>
+                        <div className="flex flex-col md:flex-row gap-8 items-end relative z-10">
+                            <div className="flex-1 space-y-3 w-full">
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] pl-1">Network Profile Selector</label>
+                                <select 
+                                    value={selectedPackageId} 
+                                    onChange={e => setSelectedPackageId(e.target.value)}
+                                    className="input-technical w-full text-base bg-bg-dark py-5"
+                                >
+                                    <option value="">-- Manual Selection Needed --</option>
+                                    {packages.map(p => <option key={p.id} value={p.id}>{p.name.toUpperCase()} HUB [RM{p.price}]</option>)}
+                                </select>
+                            </div>
+                            <button 
+                                onClick={handleGenerateCode} 
+                                disabled={!selectedPackageId}
+                                className="btn-primary w-full md:w-auto px-16 py-6 text-[11px] uppercase tracking-[0.4em]"
+                            >
+                                TRANSMIT TO VOID
+                            </button>
+                        </div>
                     </div>
-                    <button 
-                      onClick={handleGenerateCode}
-                      disabled={!selectedPackageId}
-                      className="w-full sm:w-auto bg-blue-500 hover:bg-blue-400 disabled:opacity-30 text-white font-black px-14 py-5 rounded-3xl shadow-xl shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-3 tracking-widest text-xs"
-                    >
-                      GENERATE NOW
-                    </button>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-                  {sessions.filter(s => s.status === 'active').map(session => (
-                    <motion.div 
-                      layout
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      key={session.id} 
-                      className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden group hover:shadow-xl hover:border-blue-200 transition-all"
-                    >
-                      <div className="absolute top-0 right-0 p-6 opacity-[0.03] group-hover:opacity-[0.07] transition-opacity">
-                        <Wifi size={80} />
-                      </div>
-                      <div className="mb-6">
-                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest leading-none mb-2">{session.packageName}</p>
-                        <div className="flex items-center gap-2">
-                            <h4 className="text-2xl font-mono font-black text-slate-900 tracking-tighter select-all cursor-copy" onClick={() => {
-                                navigator.clipboard.writeText(session.code);
-                                alert('Kod disalin!');
-                            }} group-hover:text-blue-600 transition-colors>{session.code}</h4>
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-4 pt-6 border-t border-slate-50 italic">
-                        <div className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Secret Key:</span>
-                          <span className="text-xs font-mono font-black text-slate-900">{session.secretKey}</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="text-center p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                                <p className="text-[9px] font-black text-slate-300 uppercase mb-1">Cap</p>
-                                <p className="text-xs font-bold text-slate-700">{formatData(session.dataLimitMB)}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        {sessions.filter(s => s.status === 'active').map(s => (
+                            <div key={s.id} className="dark-card p-10 group relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-6 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity">
+                                    <Key size={80} className="rotate-12" />
+                                </div>
+                                <div className="mb-8">
+                                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest leading-none mb-3 italic">{s.packageName}</p>
+                                    <h4 className="text-4xl font-mono font-black text-text-dark tracking-tighter group-hover:text-brand transition-colors cursor-copy select-all" onClick={() => {
+                                        navigator.clipboard.writeText(s.code);
+                                        alert('CODE_CLONED_SUCCESS');
+                                    }}>{s.code}</h4>
+                                </div>
+                                <div className="space-y-4 pt-8 border-t border-slate-900">
+                                    <div className="flex justify-between items-center bg-bg-dark border border-border-dark p-4 rounded-2xl">
+                                        <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Secret Hash</p>
+                                        <p className="text-xs font-mono font-black text-slate-400">{s.secretKey}</p>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="px-6 py-4 bg-bg-dark rounded-2xl border border-border-dark text-center">
+                                            <p className="text-[9px] font-black text-slate-700 uppercase mb-1">Cap</p>
+                                            <p className="text-xs font-bold text-slate-400">{formatData(s.dataLimitMB)}</p>
+                                        </div>
+                                        <div className="px-6 py-4 bg-bg-dark rounded-2xl border border-border-dark text-center">
+                                            <p className="text-[9px] font-black text-slate-700 uppercase mb-1">Used</p>
+                                            <p className="text-xs font-bold text-brand">{formatData(s.dataUsedMB)}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="mt-10 flex gap-4">
+                                    <button onClick={() => updateDoc(doc(db, 'sessions', s.id), { status: 'expired' })} className="flex-1 btn-outline border-red-900/30 text-red-500/60 hover:text-red-400 hover:bg-red-950/20 py-4 text-[10px] uppercase tracking-widest">Terminate</button>
+                                </div>
                             </div>
-                            <div className="text-center p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                                <p className="text-[9px] font-black text-slate-300 uppercase mb-1">Usage</p>
-                                <p className="text-xs font-bold text-blue-600">{formatData(session.dataUsedMB)}</p>
-                            </div>
-                        </div>
-                      </div>
+                        ))}
+                    </div>
+                </motion.div>
+            )}
 
-                      <div className="mt-8 flex gap-3">
-                        <button onClick={() => resetSession(session.id)} className="flex-1 bg-slate-50 hover:bg-slate-100 text-slate-600 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">Reset</button>
-                        <button onClick={async () => await updateDoc(doc(db, 'sessions', session.id), { status: 'expired' })} className="flex-1 bg-red-50 hover:bg-red-100 text-red-500 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">Remove</button>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              </motion.div>
+            {activeTab === 'requests' && (
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="space-y-6">
+                    <div className="flex items-center gap-4 mb-8">
+                        <Terminal size={32} className="text-brand" />
+                        <div>
+                            <h2 className="text-2xl font-black italic tracking-tighter">Inbound Requests</h2>
+                            <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Extension & Technical Handshakes</p>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-6">
+                        {requests.length === 0 ? (
+                            <div className="dark-card p-20 text-center italic text-slate-700 bg-slate-900/10">
+                                No pending requests in queue...
+                            </div>
+                        ) : (
+                            requests.map(req => (
+                                <div key={req.id} className={cn(
+                                    "dark-card p-10 flex items-center justify-between",
+                                    req.status === 'pending' ? "border-l-4 border-l-yellow-500 bg-yellow-500/5" : "opacity-50"
+                                )}>
+                                    <div className="flex items-center gap-8">
+                                        <div className="w-16 h-16 bg-bg-dark rounded-2xl flex items-center justify-center text-slate-600 border border-border-dark">
+                                            {req.type === 'extension' ? <RefreshCw size={24} /> : <Settings size={24} />}
+                                        </div>
+                                        <div>
+                                            <h4 className="text-xl font-black text-text-dark tracking-tighter uppercase">{req.type} REQUEST</h4>
+                                            <div className="flex gap-4 mt-2">
+                                                <span className="text-[10px] font-black text-brand uppercase tracking-widest">Node: {req.code}</span>
+                                                <span className="text-[10px] font-bold text-slate-600 uppercase">{format(new Date(req.timestamp), 'HH:mm:ss')}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-4">
+                                        {req.status === 'pending' && (
+                                            <>
+                                                <button 
+                                                    onClick={async () => {
+                                                        const session = sessions.find(s => s.id === req.sessionId);
+                                                        if (session) {
+                                                            // Extend by 2 hours for now as a real function
+                                                            const newExpiry = new Date(new Date(session.expiryTime).getTime() + 2 * 3600000).toISOString();
+                                                            await updateDoc(doc(db, 'sessions', session.id), { expiryTime: newExpiry });
+                                                            await updateDoc(doc(db, 'requests', req.id), { status: 'approved' });
+                                                        }
+                                                    }}
+                                                    className="btn-primary py-3 px-8 text-[10px] uppercase tracking-widest bg-green-600 hover:bg-green-700 shadow-green-500/10"
+                                                >
+                                                    Approve (+2h)
+                                                </button>
+                                                <button 
+                                                    onClick={async () => await updateDoc(doc(db, 'requests', req.id), { status: 'denied' })}
+                                                    className="btn-outline py-3 px-8 text-[10px] uppercase tracking-widest border-red-900/30 text-red-500/60 hover:text-red-500"
+                                                >
+                                                    Reject
+                                                </button>
+                                            </>
+                                        )}
+                                        {req.status !== 'pending' && (
+                                            <span className={cn(
+                                                "text-[11px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-lg border",
+                                                req.status === 'approved' ? "text-green-500 border-green-500/30" : "text-red-500 border-red-500/30"
+                                            )}>
+                                                {req.status}
+                                            </span>
+                                        )}
+                                        <button onClick={async () => await deleteDoc(doc(db, 'requests', req.id))} className="p-3 text-slate-700 hover:text-red-500 transition-colors">
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </motion.div>
+            )}
+
+            {activeTab === 'messages' && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-[calc(100vh-200px)] flex gap-10">
+                    <div className="w-80 dark-card flex flex-col shrink-0 overflow-hidden">
+                        <div className="p-8 border-b border-border-dark bg-slate-900/50">
+                            <h3 className="text-xs font-black uppercase tracking-[0.3em] italic">Comms Stream</h3>
+                            <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mt-1">Inbound Intercepts</p>
+                        </div>
+                        <div className="flex-1 overflow-y-auto technical-grid">
+                            {sessions.map(s => (
+                                <button 
+                                    key={s.id} 
+                                    onClick={() => setSelectedSessionId(s.id)}
+                                    className={cn(
+                                        "w-full text-left p-6 border-b border-border-dark hover:bg-slate-900 transition-colors relative group",
+                                        selectedSessionId === s.id && "bg-slate-900 border-l-4 border-l-brand"
+                                    )}
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 bg-bg-dark border border-border-dark rounded-xl flex items-center justify-center text-slate-600 group-hover:text-brand transition-colors">
+                                            <User size={20} />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-mono font-bold text-text-dark">{s.code}</p>
+                                            <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-1 italic">{s.packageName}</p>
+                                        </div>
+                                    </div>
+                                    <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-800" size={16} />
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex-1 dark-card overflow-hidden bg-slate-900/10">
+                        {selectedSessionId ? (
+                             <div className="h-full flex flex-col p-8 pb-32 relative">
+                                <p className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[150px] font-black text-slate-900 opacity-5 -rotate-12 select-none pointer-events-none">SECURE_CHAT</p>
+                                <ChatBot sessionId={selectedSessionId} isAdmin={true} />
+                             </div>
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center space-y-6 italic text-slate-700 opacity-50">
+                                <MessageSquare size={100} />
+                                <p className="uppercase tracking-[0.4em] font-black text-sm">Select Node to Intercept</p>
+                            </div>
+                        )}
+                    </div>
+                </motion.div>
             )}
 
             {activeTab === 'settings' && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} key="settings" className="max-w-4xl space-y-10 pb-20">
-                <div className="bg-white p-10 rounded-[40px] shadow-sm border border-slate-200 flex flex-col md:flex-row gap-12">
-                  <div className="md:w-1/3">
-                    <h3 className="text-xl font-black text-slate-800 tracking-tighter mb-2 italic">Dashboard Control</h3>
-                    <p className="text-xs text-slate-400 font-medium leading-relaxed">Kawalan hebahan mesej dan sekatan aplikasi masa nyata untuk semua pengguna.</p>
-                  </div>
-                  <div className="flex-1 space-y-6">
-                    <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-3">Broadcast Announcement</label>
-                        <textarea 
-                          className="w-full px-6 py-5 border-2 border-slate-50 rounded-3xl bg-slate-50 text-slate-800 font-medium focus:ring-4 focus:ring-blue-100 outline-none transition-all h-32 text-sm italic"
-                          placeholder="Mesej kepada semua..."
-                          value={broadcastMsg}
-                          onChange={e => setBroadcastMsg(e.target.value)}
-                        />
-                    </div>
-                    <button 
-                      onClick={handleUpdateSettings}
-                      disabled={!broadcastMsg}
-                      className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-30 text-white font-black py-5 rounded-3xl shadow-xl shadow-blue-500/10 active:scale-95 transition-all flex items-center justify-center gap-3 tracking-widest text-[10px] uppercase"
-                    >
-                      <Send size={18} />
-                      PUSH TO DEVICES
-                    </button>
-                    {settings && (
-                        <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Status: <span className="text-green-600">Active Broadcast</span></span>
-                            <span className="text-[10px] text-slate-300 italic">{format(new Date(settings.updatedAt), 'HH:mm')}</span>
+                <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="max-w-5xl space-y-12">
+                    <div className="bg-gradient-to-br from-indigo-950/20 to-brand/10 border border-brand/20 p-12 rounded-[40px] shadow-2xl relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-12 opacity-10">
+                            <Bot size={150} className="rotate-12" />
                         </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="bg-white p-10 rounded-[40px] shadow-sm border border-slate-200">
-                    <div className="flex items-center justify-between mb-10">
-                        <div>
-                            <h3 className="text-xl font-black text-slate-800 tracking-tighter italic">Application Guard</h3>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Whitelisted Ecosystem</p>
-                        </div>
-                        <div className="p-3 bg-blue-50 rounded-2xl">
-                            <AppWindow className="text-blue-600" />
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        {['WhatsApp', 'Facebook', 'Browser', 'YouTube', 'TikTok', 'Instagram', 'Netfix', 'Gaming'].map(app => (
-                            <label key={app} className="relative group cursor-pointer">
-                                <input 
-                                    type="checkbox" 
-                                    className="peer hidden"
-                                    checked={settings?.allowedApps?.includes(app)}
-                                    onChange={async (e) => {
-                                        const current = settings?.allowedApps || [];
-                                        const updated = e.target.checked 
-                                            ? [...current, app]
-                                            : current.filter(a => a !== app);
-                                        await setDoc(doc(db, 'settings', 'global'), { ...settings, allowedApps: updated, updatedAt: new Date().toISOString() });
-                                    }}
+                        <div className="max-w-2xl relative z-10">
+                            <h3 className="text-3xl font-black italic tracking-tighter mb-4 text-text-dark">AI Configuration <span className="text-brand">Assistant</span></h3>
+                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest leading-relaxed mb-10 italic">
+                                Perintahkan AI untuk mengemaskini tetapan, menukar sekatan aplikasi, atau menjana mesej hebahan global secara automatik.
+                            </p>
+                            <div className="space-y-6">
+                                <textarea 
+                                    value={aiInstruction}
+                                    onChange={e => setAiInstruction(e.target.value)}
+                                    placeholder="Contoh: 'Tukar hebahan kepada promosi hari raya dan benarkan Netflix hujung minggu ini'"
+                                    className="input-technical w-full h-32 text-sm leading-relaxed"
                                 />
-                                <div className="flex items-center justify-center h-20 border-2 border-slate-50 rounded-[28px] bg-slate-50 text-slate-400 font-bold text-xs peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-500 peer-checked:shadow-xl transition-all peer-checked:scale-[1.02]">
-                                    {app}
-                                </div>
-                            </label>
-                        ))}
+                                <button 
+                                    onClick={handleAIConfig}
+                                    disabled={aiLoading || !aiInstruction.trim()}
+                                    className="btn-primary flex items-center gap-4 px-12 group"
+                                >
+                                    {aiLoading ? <RefreshCw className="animate-spin" size={18} /> : <Bot size={18} className="group-hover:rotate-12 transition-transform" />}
+                                    <span className="uppercase tracking-widest text-[11px] font-black">AI_PROCESS_INSTRUCTION</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                </div>
-              </motion.div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                        <div className="dark-card p-10 bg-slate-900/30">
+                            <div className="flex items-center gap-4 mb-10">
+                                <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-brand border border-border-dark">
+                                    <Send size={24} />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-black tracking-tighter italic">Manual Broadcast</h3>
+                                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Global Node Dispatch</p>
+                                </div>
+                            </div>
+                            <textarea 
+                                value={broadcastMsg}
+                                onChange={e => setBroadcastMsg(e.target.value)}
+                                className="input-technical w-full h-40 text-sm mb-6"
+                                placeholder="..."
+                            />
+                            <button 
+                                onClick={async () => {
+                                    await updateDoc(doc(db, 'settings', 'global'), { ...settings, broadcastMessage: broadcastMsg, updatedAt: new Date().toISOString() });
+                                    setBroadcastMsg('');
+                                }}
+                                className="btn-outline w-full py-5 text-[10px] uppercase tracking-widest border-slate-800 hover:bg-slate-900"
+                            >
+                                DISPATCH HEBAHAN
+                            </button>
+                        </div>
+
+                        <div className="dark-card p-10 bg-slate-900/30">
+                            <div className="flex items-center gap-4 mb-10">
+                                <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-brand border border-border-dark">
+                                    <AppWindow size={24} />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-black tracking-tighter italic">Environment Guard</h3>
+                                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Whitelisted Protocols</p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                {['WhatsApp', 'Facebook', 'Netfix', 'YouTube', 'TikTok', 'Instagram', 'Gaming', 'Browser'].map(app => (
+                                    <label key={app} className="relative group cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            className="peer hidden"
+                                            checked={settings?.allowedApps?.includes(app)}
+                                            onChange={async (e) => {
+                                                const current = settings?.allowedApps || [];
+                                                const updated = e.target.checked ? [...current, app] : current.filter(a => a !== app);
+                                                await updateDoc(doc(db, 'settings', 'global'), { ...settings, allowedApps: updated, updatedAt: new Date().toISOString() });
+                                            }}
+                                        />
+                                        <div className="flex items-center justify-center h-16 border-2 border-slate-900/50 rounded-2xl bg-slate-900/50 text-[10px] font-black uppercase tracking-widest text-slate-700 peer-checked:bg-brand peer-checked:text-white peer-checked:border-brand transition-all peer-checked:scale-[1.05] peer-checked:shadow-2xl peer-checked:shadow-brand/20 italic">
+                                            {app}
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
             )}
           </AnimatePresence>
         </div>
@@ -465,34 +729,49 @@ export default function AdminDashboard() {
   );
 }
 
-function NavItem({ active, icon, label, onClick }: { active: boolean, icon: React.ReactNode, label: string, onClick: () => void }) {
+function NavItem({ active, onClick, icon, label, sub }: { active: boolean; onClick: () => void; icon: any; label: string; sub?: string }) {
   return (
-    <button
+    <button 
       onClick={onClick}
       className={cn(
-        "p-3 flex items-center gap-3 rounded-lg cursor-pointer transition-all duration-200 w-full group text-left",
-        active 
-          ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20" 
-          : "text-slate-400 hover:bg-slate-800 hover:text-white"
+        "flex items-center justify-between w-full p-4 rounded-2xl transition-all group relative overflow-hidden",
+        active ? "bg-brand text-white shadow-xl shadow-brand/20 translate-x-2" : "text-slate-500 hover:text-slate-300 hover:bg-slate-900"
       )}
     >
-      <span className={cn("transition-colors", active ? "text-white" : "text-slate-500 group-hover:text-slate-300")}>{icon}</span>
-      <span className="text-sm font-medium tracking-tight">{label}</span>
+      <div className="flex items-center gap-4 relative z-10">
+        {icon}
+        <span className="text-[10px] font-black uppercase tracking-[0.2em]">{label}</span>
+      </div>
+      {sub && <span className={cn("text-[8px] font-black px-1.5 py-0.5 rounded-md border italic", active ? "border-white/30 bg-white/10" : "border-slate-800 bg-slate-900")}>{sub}</span>}
+      {active && <motion.div layoutId="nav-active" className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white rounded-full" />}
     </button>
   );
 }
 
-function StatCard({ label, value, trend, color }: { label: string, value: string, trend: string, color: string }) {
+function StatCard({ label, value, trend, color = 'text-brand' }: { label: string; value: string; trend: string; color?: string }) {
   return (
-    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-md group">
-      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</p>
-      <p className={cn("text-2xl font-bold tracking-tight", color)}>{value}</p>
-      <div className={cn(
-        "text-[10px] font-bold mt-2 flex items-center gap-1",
-        trend.includes('+') ? "text-green-600" : trend.includes('baucar') ? "text-blue-600" : "text-slate-500 underline decoration-slate-200 underline-offset-4"
-      )}>
-        {trend}
+    <div className="dark-card p-8 bg-surface-dark border p-6 relative overflow-hidden group">
+      <div className="absolute -top-10 -right-10 w-24 h-24 bg-brand/5 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
+      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-3 pl-1">{label}</p>
+      <div className="flex items-end gap-3">
+        <h4 className={cn("text-4xl font-black italic tracking-tighter", color)}>{value}</h4>
+        <p className="text-[8px] font-bold text-slate-700 uppercase tracking-widest mb-1">{trend}</p>
       </div>
     </div>
   );
 }
+
+function MonitoringSmallCard({ label, value }: { label: string; value: string }) {
+    return (
+        <div className="bg-bg-dark border border-border-dark p-6 rounded-2xl flex flex-col items-center justify-center text-center group hover:bg-slate-900/50 transition-colors">
+            <p className="text-[8px] font-black text-slate-700 uppercase tracking-widest mb-2 italic">{label}</p>
+            <p className="text-base font-bold text-slate-300 group-hover:text-brand transition-colors">{value}</p>
+        </div>
+    );
+}
+
+const User = ({ size, className }: any) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+  </svg>
+);

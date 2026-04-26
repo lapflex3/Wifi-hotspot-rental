@@ -1,6 +1,6 @@
 {
-  "name": "WiFi Hotspot Manager",
-  "description": "A comprehensive WiFi hotspot rental management system featuring data and speed control, secret key generation, real-time usage monitoring, and administrative controls.",
+  "name": "WiFi Hotspot Rental",
+  "description": "Professional WiFi hotspot rental management system for aiapp.nasadef.com.my. Features real-time device monitoring (CPU/RAM), AI-assisted configuration, automated vouchers, and dark mode technical interface.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }
