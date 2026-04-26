@@ -208,27 +208,33 @@ export default function AdminDashboard() {
                             <thead className="bg-slate-900/50 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
                                 <tr>
                                     <th className="px-8 py-6">Identity / Code</th>
-                                    <th className="px-8 py-6">Network Node</th>
+                                    <th className="px-8 py-6">Status / Node</th>
                                     <th className="px-8 py-6 text-right">Data Sink</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border-dark">
-                                {sessions.slice(0, 5).map(s => (
-                                    <tr key={s.id} className="hover:bg-slate-900/40 transition-colors group">
-                                        <td className="px-8 py-6">
-                                            <div className="font-mono text-sm font-bold text-brand group-hover:translate-x-1 transition-transform">{s.code}</div>
-                                            <div className="text-[10px] text-slate-600 mt-1 uppercase font-bold tracking-widest">{s.id.slice(0,12)}</div>
-                                        </td>
-                                        <td className="px-8 py-6">
-                                            <div className="text-xs font-bold text-text-dark">{s.packageName}</div>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <span className={cn(
-                                                    "w-1.5 h-1.5 rounded-full",
-                                                    s.status === 'active' ? "bg-green-500" : "bg-red-500"
-                                                )}></span>
-                                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">{s.status}</span>
-                                            </div>
-                                        </td>
+                                {sessions.slice(0, 5).map(s => {
+                                    const lastUpdate = (s as any).deviceInfo?.lastUpdate;
+                                    const isConnected = lastUpdate && (Date.now() - new Date(lastUpdate).getTime() < 30000);
+                                    
+                                    return (
+                                        <tr key={s.id} className="hover:bg-slate-900/40 transition-colors group">
+                                            <td className="px-8 py-6">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={cn(
+                                                        "w-2 h-2 rounded-full",
+                                                        isConnected ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" : "bg-red-500"
+                                                    )}></div>
+                                                    <div className="font-mono text-sm font-bold text-brand group-hover:translate-x-1 transition-transform">{s.code}</div>
+                                                </div>
+                                                <div className="text-[10px] text-slate-600 mt-1 uppercase font-bold tracking-widest pl-5">{s.id.slice(0,12)}</div>
+                                            </td>
+                                            <td className="px-8 py-6">
+                                                <div className="text-xs font-bold text-text-dark">{s.packageName}</div>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">{s.status}</span>
+                                                </div>
+                                            </td>
                                         <td className="px-8 py-6 text-right">
                                             <div className="text-sm font-mono font-black text-slate-300">{formatData(s.dataUsedMB)}</div>
                                             <div className="w-24 h-1 bg-slate-900 rounded-full ml-auto mt-2 overflow-hidden border border-slate-800">
@@ -236,8 +242,9 @@ export default function AdminDashboard() {
                                             </div>
                                         </td>
                                     </tr>
-                                ))}
-                            </tbody>
+                                );
+                            })}
+                        </tbody>
                         </table>
                     </div>
                 </div>
@@ -248,25 +255,34 @@ export default function AdminDashboard() {
               <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} key="monitoring" className="grid grid-cols-1 lg:grid-cols-3 gap-10">
                 <div className="lg:col-span-1 space-y-6 overflow-y-auto max-h-[calc(100vh-200px)] pr-2">
                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-2 mb-4">Active Endpoints</p>
-                    {sessions.map(s => (
-                        <button 
-                            key={s.id} 
-                            onClick={() => setSelectedSessionId(s.id)}
-                            className={cn(
-                                "w-full text-left dark-card p-6 border-l-4 transition-all active:scale-[0.98] group",
-                                selectedSessionId === s.id ? "border-brand bg-slate-900" : "border-transparent opacity-60 grayscale hover:opacity-100 hover:grayscale-0"
-                            )}
-                        >
-                            <div className="flex justify-between items-start">
-                                <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center text-slate-500 group-hover:text-brand transition-colors mb-4">
-                                    <Smartphone size={20} />
+                    {sessions.map(s => {
+                        const lastUpdate = (s as any).deviceInfo?.lastUpdate;
+                        const isConnected = lastUpdate && (Date.now() - new Date(lastUpdate).getTime() < 30000);
+                        
+                        return (
+                            <button 
+                                key={s.id} 
+                                onClick={() => setSelectedSessionId(s.id)}
+                                className={cn(
+                                    "w-full text-left dark-card p-6 border-l-4 transition-all active:scale-[0.98] group",
+                                    selectedSessionId === s.id ? "border-brand bg-slate-900" : "border-transparent opacity-60 grayscale hover:opacity-100 hover:grayscale-0"
+                                )}
+                            >
+                                <div className="flex justify-between items-start">
+                                    <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center text-slate-500 group-hover:text-brand transition-colors mb-4 relative">
+                                        <Smartphone size={20} />
+                                        <div className={cn(
+                                            "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-slate-900",
+                                            isConnected ? "bg-green-500 animate-pulse" : "bg-red-500"
+                                        )}></div>
+                                    </div>
+                                    {s.status === 'active' && <div className="text-[8px] font-black uppercase text-green-500/50 mt-2">Active</div>}
                                 </div>
-                                {s.status === 'active' && <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mt-2"></div>}
-                            </div>
-                            <h4 className="text-sm font-mono font-black text-text-dark">{s.code}</h4>
-                            <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest mt-1 italic">{s.packageName}</p>
-                        </button>
-                    ))}
+                                <h4 className="text-sm font-mono font-black text-text-dark">{s.code}</h4>
+                                <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest mt-1 italic">{s.packageName}</p>
+                            </button>
+                        );
+                    })}
                 </div>
 
                 <div className="lg:col-span-2">

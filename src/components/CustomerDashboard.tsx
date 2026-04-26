@@ -151,7 +151,49 @@ export default function CustomerDashboard({ user }: { user: any }) {
   const dataPercentage = (session.dataUsedMB / session.dataLimitMB) * 100;
 
   return (
-    <div className="min-h-screen bg-bg-dark font-sans flex flex-col items-center justify-center px-4 technical-grid">
+    <div className="min-h-screen bg-bg-dark font-sans flex flex-col items-center justify-center px-4 technical-grid relative pt-20">
+      
+      <AnimatePresence>
+        {isExpiringSoon && (
+          <motion.div 
+            initial={{ y: -100 }}
+            animate={{ y: 0 }}
+            exit={{ y: -100 }}
+            className="fixed top-0 left-0 right-0 z-[100] bg-red-600 border-b border-red-500 shadow-[0_4px_30px_rgba(220,38,38,0.4)]"
+          >
+            <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center animate-pulse">
+                  <ShieldAlert className="text-white" size={24} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-white italic tracking-tight">CRITICAL: SESSION TERMINATION IMMINENT</h4>
+                  <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest">Link will be severed in {timeLeft}</p>
+                </div>
+              </div>
+              <button 
+                onClick={async () => {
+                   try {
+                        await addDoc(collection(db, 'requests'), {
+                            sessionId: session.id,
+                            code: session.code,
+                            type: 'extension',
+                            status: 'pending',
+                            timestamp: new Date().toISOString()
+                        });
+                        alert('Permintaan pelanjutan telah dihantar kepada admin.');
+                    } catch (err) {
+                        console.error(err);
+                    }
+                }}
+                className="bg-white text-red-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-100 transition-colors shadow-lg"
+              >
+                Request Extension
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       <AnimatePresence mode="wait">
         {!isMinimized ? (
@@ -188,21 +230,6 @@ export default function CustomerDashboard({ user }: { user: any }) {
               {/* Body */}
               <div className="px-6 -mt-8 flex-1 overflow-y-auto space-y-6 relative z-20 pb-10">
                 <AnimatePresence>
-                    {isExpiringSoon && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        className="bg-red-600/90 border border-red-500 p-4 rounded-2xl shadow-xl shadow-red-900/40 relative z-50"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-2 h-2 bg-white rounded-full animate-ping"></div>
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white italic">
-                            ALERT: LINK TERMINATION IN &lt;15M
-                          </p>
-                        </div>
-                      </motion.div>
-                    )}
                     {settings?.broadcastMessage && (
                         <motion.div 
                             initial={{ opacity: 0, x: -20 }}
