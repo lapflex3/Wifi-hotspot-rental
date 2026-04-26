@@ -67,6 +67,8 @@
       "properties": {
         "allowedApps": { "type": "array", "items": { "type": "string" } },
         "broadcastMessage": { "type": "string" },
+        "popupSSID": { "type": "string" },
+        "popupGatewayIP": { "type": "string" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["allowedApps", "broadcastMessage", "updatedAt"]

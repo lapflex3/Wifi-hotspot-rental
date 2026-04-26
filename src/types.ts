@@ -25,6 +25,8 @@ export interface Session {
 export interface AppControl {
   allowedApps: string[];
   broadcastMessage: string;
+  popupSSID?: string;
+  popupGatewayIP?: string;
   updatedAt: string;
 }
 

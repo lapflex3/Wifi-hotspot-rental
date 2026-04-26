@@ -30,18 +30,18 @@ export async function getAIHelp(prompt: string, context?: any) {
 export async function getAdminConfigAI(instruction: string, currentSettings: any) {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-1.5-flash",
       contents: [
         {
           role: "user",
           parts: [{ text: `Current Settings: ${JSON.stringify(currentSettings)}. 
           Admin Instruction: ${instruction}. 
-          Provide a JSON response with suggested updates to 'broadcastMessage' and 'allowedApps'.` }]
+          Provide a JSON response with suggested updates to 'broadcastMessage', 'allowedApps', 'popupSSID', or 'popupGatewayIP'.` }]
         }
       ],
       config: {
         responseMimeType: "application/json",
-        systemInstruction: "You are the core configuration engine for HS-Manager. Based on admin instructions, suggest optimal values for the system settings. Return only valid JSON."
+        systemInstruction: "You are the core configuration engine for HS-Manager. Based on admin instructions, suggest optimal values for the system settings. Return only valid JSON. If the instructions relate to network triggers, update 'popupSSID' or 'popupGatewayIP'. If they relate to app access, update 'allowedApps'."
       }
     });
 

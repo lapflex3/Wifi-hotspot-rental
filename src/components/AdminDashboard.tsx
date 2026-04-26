@@ -299,7 +299,7 @@ export default function AdminDashboard() {
                                                     </div>
                                                     <div>
                                                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Processor Unit</p>
-                                                        <h4 className="text-sm font-bold text-text-dark">ARM-64 Optimized Core</h4>
+                                                        <h4 className="text-sm font-bold text-text-dark">{(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.cpu || 'Detecting...'}</h4>
                                                     </div>
                                                 </div>
                                                 <div className="space-y-4">
@@ -334,10 +334,11 @@ export default function AdminDashboard() {
                                             </div>
                                         </div>
 
-                                        <div className="mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
-                                            <MonitoringSmallCard label="Platform OS" value={(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.os?.split(' ')[0] || 'Unknown'} />
-                                            <MonitoringSmallCard label="Client Browser" value={(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.browser?.split('/')[0] || 'Generic'} />
+                                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mt-10 relative z-10">
+                                            <MonitoringSmallCard label="Platform OS" value={(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.os || 'System Node'} />
                                             <MonitoringSmallCard label="Topology" value={(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.isMobile ? 'Mobile Node' : 'Workstation'} />
+                                            <MonitoringSmallCard label="Graphics Unit" value={(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.gpu || 'N/A'} />
+                                            <MonitoringSmallCard label="Compute Cores" value={(sessions.find(s => s.id === selectedSessionId) as any)?.deviceInfo?.cores || 'U/N'} />
                                         </div>
                                     </div>
 
@@ -661,15 +662,57 @@ export default function AdminDashboard() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+                        <div className="dark-card p-10 bg-slate-900/30">
+                            <div className="flex items-center gap-4 mb-10">
+                                <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-brand border border-border-dark">
+                                    <Wifi size={24} />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-black tracking-tighter italic">Network Popup</h3>
+                                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Trigger Protocols</p>
+                                </div>
+                            </div>
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 pl-1">Target SSID</label>
+                                    <input 
+                                        type="text" 
+                                        value={settings?.popupSSID || ''}
+                                        onChange={async (e) => {
+                                            const val = e.target.value;
+                                            const path = 'settings/global';
+                                            await updateDoc(doc(db, path), { ...settings, popupSSID: val, updatedAt: new Date().toISOString() }).catch(err => handleFirestoreError(err, OperationType.UPDATE, path));
+                                        }}
+                                        className="input-technical w-full"
+                                        placeholder="WiFi-Hotspot-Rental"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 pl-1">Gateway IP</label>
+                                    <input 
+                                        type="text" 
+                                        value={settings?.popupGatewayIP || ''}
+                                        onChange={async (e) => {
+                                            const val = e.target.value;
+                                            const path = 'settings/global';
+                                            await updateDoc(doc(db, path), { ...settings, popupGatewayIP: val, updatedAt: new Date().toISOString() }).catch(err => handleFirestoreError(err, OperationType.UPDATE, path));
+                                        }}
+                                        className="input-technical w-full"
+                                        placeholder="192.168.1.1"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="dark-card p-10 bg-slate-900/30">
                             <div className="flex items-center gap-4 mb-10">
                                 <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-brand border border-border-dark">
                                     <Send size={24} />
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-black tracking-tighter italic">Manual Broadcast</h3>
-                                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Global Node Dispatch</p>
+                                    <h3 className="text-lg font-black tracking-tighter italic">Broadcast</h3>
+                                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Global Dispatch</p>
                                 </div>
                             </div>
                             <textarea 
@@ -680,7 +723,8 @@ export default function AdminDashboard() {
                             />
                             <button 
                                 onClick={async () => {
-                                    await updateDoc(doc(db, 'settings', 'global'), { ...settings, broadcastMessage: broadcastMsg, updatedAt: new Date().toISOString() });
+                                    const path = 'settings/global';
+                                    await updateDoc(doc(db, path), { ...settings, broadcastMessage: broadcastMsg, updatedAt: new Date().toISOString() }).catch(err => handleFirestoreError(err, OperationType.UPDATE, path));
                                     setBroadcastMsg('');
                                 }}
                                 className="btn-outline w-full py-5 text-[10px] uppercase tracking-widest border-slate-800 hover:bg-slate-900"
@@ -695,8 +739,8 @@ export default function AdminDashboard() {
                                     <AppWindow size={24} />
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-black tracking-tighter italic">Environment Guard</h3>
-                                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Whitelisted Protocols</p>
+                                    <h3 className="text-lg font-black tracking-tighter italic">Guard</h3>
+                                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Whitelist</p>
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
@@ -709,7 +753,8 @@ export default function AdminDashboard() {
                                             onChange={async (e) => {
                                                 const current = settings?.allowedApps || [];
                                                 const updated = e.target.checked ? [...current, app] : current.filter(a => a !== app);
-                                                await updateDoc(doc(db, 'settings', 'global'), { ...settings, allowedApps: updated, updatedAt: new Date().toISOString() });
+                                                const path = 'settings/global';
+                                                await updateDoc(doc(db, path), { ...settings, allowedApps: updated, updatedAt: new Date().toISOString() }).catch(err => handleFirestoreError(err, OperationType.UPDATE, path));
                                             }}
                                         />
                                         <div className="flex items-center justify-center h-16 border-2 border-slate-900/50 rounded-2xl bg-slate-900/50 text-[10px] font-black uppercase tracking-widest text-slate-700 peer-checked:bg-brand peer-checked:text-white peer-checked:border-brand transition-all peer-checked:scale-[1.05] peer-checked:shadow-2xl peer-checked:shadow-brand/20 italic">
