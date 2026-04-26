@@ -1,0 +1,78 @@
+{
+  "entities": {
+    "Package": {
+      "title": "Rental Package",
+      "description": "Definition of a hotspot rental package",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "dataLimitMB": { "type": "number" },
+        "speedLimitMbps": { "type": "number" },
+        "durationHours": { "type": "number" },
+        "price": { "type": "number" }
+      },
+      "required": ["name", "dataLimitMB", "speedLimitMbps", "durationHours", "price"]
+    },
+    "Session": {
+      "title": "Rental Session",
+      "description": "An active or expired rental session for a user",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "secretKey": { "type": "string" },
+        "packageId": { "type": "string" },
+        "packageName": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "expired"] },
+        "startTime": { "type": "string", "format": "date-time" },
+        "expiryTime": { "type": "string", "format": "date-time" },
+        "dataLimitMB": { "type": "number" },
+        "dataUsedMB": { "type": "number" },
+        "speedLimitMbps": { "type": "number" },
+        "userId": { "type": "string" },
+        "lastAlertData": { "type": "boolean" },
+        "lastAlertTime": { "type": "boolean" }
+      },
+      "required": ["code", "secretKey", "status", "startTime", "expiryTime", "dataLimitMB", "dataUsedMB", "speedLimitMbps"]
+    },
+    "AppControl": {
+      "title": "App Control",
+      "description": "Global settings for allowed apps and messages",
+      "type": "object",
+      "properties": {
+        "allowedApps": { "type": "array", "items": { "type": "string" } },
+        "broadcastMessage": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["allowedApps", "broadcastMessage", "updatedAt"]
+    },
+    "UsageLog": {
+      "title": "Usage Log",
+      "description": "Log of data usage for a session",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "dataTransferredMB": { "type": "number" }
+      },
+      "required": ["sessionId", "timestamp", "dataTransferredMB"]
+    }
+  },
+  "firestore": {
+    "/packages/{packageId}": {
+      "schema": "Package",
+      "description": "Available rental packages"
+    },
+    "/sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "Active and past rental sessions"
+    },
+    "/settings/global": {
+      "schema": "AppControl",
+      "description": "Global admin settings"
+    },
+    "/logs/{logId}": {
+      "schema": "UsageLog",
+      "description": "Detailed usage logs"
+    }
+  }
+}

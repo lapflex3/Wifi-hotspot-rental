@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'laptoprazif@gmail.com'
+      );
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Admins collection (to bootstrap admin access)
+    match /admins/{adminId} {
+      allow read: if isSignedIn() && (request.auth.uid == adminId || isAdmin());
+    }
+
+    // Packages
+    match /packages/{packageId} {
+      allow read: if true; // Publicly viewable
+      allow write: if isAdmin();
+    }
+
+    // Sessions
+    match /sessions/{sessionId} {
+      function isValidSession(data) {
+        return data.code is string && data.code.size() == 12 &&
+               data.secretKey is string && data.secretKey.size() == 12 &&
+               data.status in ['active', 'expired'] &&
+               data.dataLimitMB is number &&
+               data.dataUsedMB is number &&
+               data.speedLimitMbps is number;
+      }
+
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isAdmin();
+      allow update: if (isAdmin()) || (
+        isSignedIn() && 
+        resource.data.userId == request.auth.uid && 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dataUsedMB', 'lastAlertData', 'lastAlertTime'])
+      );
+    }
+
+    // Settings
+    match /settings/global {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Logs
+    match /logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn(); // Users log their own usage
+    }
+  }
+}
